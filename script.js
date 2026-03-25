@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Event listeners
     addressInput.addEventListener('keypress', handleAddressSubmit);
+    document.getElementById('search-btn').addEventListener('click', () => triggerSearch());
     backButton.addEventListener('click', goBackToLanding);
     errorRetryButton.addEventListener('click', goBackToLanding);
 });
@@ -38,57 +39,132 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 async function handleAddressSubmit(event) {
     if (event.key !== 'Enter') return;
+    triggerSearch();
+}
 
+async function triggerSearch() {
     const address = addressInput.value.trim();
-    if (!address) {
-        alert('Please enter an address');
+    if (!address) return;
+
+    goToResultsPage();
+    resultAddress.textContent = address;
+    showLoading();
+
+    const apiKey = localStorage.getItem('claudeApiKey');
+    if (!apiKey) {
+        displayError('API key not found. Please refresh and provide your Claude API key.');
         return;
     }
 
-    // Switch to results page
-    goToResultsPage();
-    resultAddress.textContent = address;
+    // 1. Show map immediately
+    const mapSrc = `https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed&z=16`;
+    hideLoading();
+    hideError();
+    resultsContent.style.display = 'block';
+    resultsContent.innerHTML = `<iframe class="map-embed" src="${mapSrc}" allowfullscreen loading="lazy"></iframe>`;
 
-    // Show loading state
-    showLoading();
+    // 2. Add monospace pre below the map for streaming
+    const pre = document.createElement('pre');
+    pre.className = 'stream-output';
+    resultsContent.appendChild(pre);
 
     try {
-        // Call Claude API
-        const response = await fetchRealEstateData(address);
-        displayResults(response);
+        const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address, apiKey }),
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.error) { displayError(parsed.error); return; }
+                    if (parsed.text) {
+                        fullText += parsed.text;
+                        pre.textContent = fullText;
+                        pre.scrollIntoView({ block: 'end', behavior: 'smooth' });
+                    }
+                } catch (_) {}
+            }
+        }
+
+        // 3. Stream done — replace the <pre> with Garamond-rendered output
+        pre.remove();
+        renderFinalOutput(resultsContent, fullText);
     } catch (error) {
         displayError(error.message);
     }
 }
 
-/**
- * Fetch real estate data from local backend
- */
-async function fetchRealEstateData(address) {
-    const apiKey = localStorage.getItem('claudeApiKey');
+function renderFinalOutput(container, text) {
+    const sections = [];
+    let currentHeader = null;
+    let currentLines = [];
 
-    if (!apiKey) {
-        throw new Error('API key not found. Please refresh and provide your Claude API key.');
+    for (const line of text.split('\n')) {
+        if (/^[A-Z][A-Z\s]+·/.test(line)) {
+            if (currentHeader !== null) {
+                sections.push({ header: currentHeader, body: currentLines.join('\n').trim() });
+            }
+            currentHeader = line;
+            currentLines = [];
+        } else if (/\d+ data sources queried/.test(line)) {
+            if (currentHeader !== null) {
+                sections.push({ header: currentHeader, body: currentLines.join('\n').trim() });
+                currentHeader = null;
+                currentLines = [];
+            }
+            sections.push({ footer: line });
+        } else {
+            currentLines.push(line);
+        }
+    }
+    if (currentHeader !== null) {
+        sections.push({ header: currentHeader, body: currentLines.join('\n').trim() });
     }
 
-    const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            address: address,
-            apiKey: apiKey,
-        }),
-    });
+    const wrap = document.createElement('div');
+    wrap.className = 'final-output';
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze address');
+    for (const s of sections) {
+        if (s.footer) {
+            const footer = document.createElement('div');
+            footer.className = 'final-footer';
+            footer.textContent = s.footer;
+            wrap.appendChild(footer);
+        } else {
+            const section = document.createElement('div');
+            section.className = 'final-section';
+            const header = document.createElement('div');
+            header.className = 'final-section-header';
+            header.textContent = s.header;
+            const body = document.createElement('div');
+            body.className = 'final-section-body';
+            body.textContent = s.body;
+            section.appendChild(header);
+            section.appendChild(body);
+            wrap.appendChild(section);
+        }
     }
 
-    const data = await response.json();
-    return data.result;
+    container.appendChild(wrap);
+    container.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 /**

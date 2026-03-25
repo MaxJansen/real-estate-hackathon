@@ -5,23 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real Estate Developer Platform</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- Landing Page -->
     <div id="landing-page" class="page active">
         <div class="map-background"></div>
         <div class="container">
-            <div class="content-box">
-                <h1>Real Estate Intelligence Platform</h1>
-                <p class="subtitle">Discover comprehensive real estate data for your next project</p>
-                <div class="input-wrapper">
+            <div class="search-bar-wrapper">
+                <div class="search-bar">
                     <input
                         type="text"
                         id="address-input"
-                        placeholder="Enter an address (Dutch or German)..."
+                        placeholder="Enter an address..."
                         class="address-input"
                     >
-                    <span class="input-hint">Press Enter to search</span>
+                    <button class="search-btn" id="search-btn">&#x2192;</button>
                 </div>
             </div>
         </div>
