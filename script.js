@@ -1,7 +1,3 @@
-// API Configuration
-// The backend server handles all API communication securely
-const API_KEY = localStorage.getItem('claudeApiKey'); // Will be set by user on first load
-
 // DOM Elements
 const addressInput = document.getElementById('address-input');
 const landingPage = document.getElementById('landing-page');
@@ -16,17 +12,6 @@ const errorRetryButton = document.getElementById('error-retry');
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
-    // Request API key if not stored
-    if (!API_KEY) {
-        const key = prompt('Please enter your Claude API key:\n\n(You can get this from https://console.anthropic.com/)');
-        if (key) {
-            localStorage.setItem('claudeApiKey', key);
-        } else {
-            alert('API key is required to use this application.');
-            return;
-        }
-    }
-
     // Event listeners
     addressInput.addEventListener('keypress', handleAddressSubmit);
     document.getElementById('search-btn').addEventListener('click', () => triggerSearch());
@@ -50,12 +35,6 @@ async function triggerSearch() {
     resultAddress.textContent = address;
     showLoading();
 
-    const apiKey = localStorage.getItem('claudeApiKey');
-    if (!apiKey) {
-        displayError('API key not found. Please refresh and provide your Claude API key.');
-        return;
-    }
-
     // 1. Show map immediately
     const mapSrc = `https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed&z=16`;
     hideLoading();
@@ -69,44 +48,30 @@ async function triggerSearch() {
     resultsContent.appendChild(pre);
 
     try {
-        const response = await fetch('/api/analyze', {
+        const response = await fetch('/.netlify/functions/claude', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address, apiKey }),
+            body: JSON.stringify({ prompt: `Address: ${address}` }),
         });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let fullText = '';
+        const data = await response.json();
+        const fullText = data.content?.[0]?.text || '';
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+        if (!fullText) { displayError('No response received.'); return; }
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const data = line.slice(6).trim();
-                if (data === '[DONE]') continue;
-                try {
-                    const parsed = JSON.parse(data);
-                    if (parsed.error) { displayError(parsed.error); return; }
-                    if (parsed.text) {
-                        fullText += parsed.text;
-                        pre.textContent = fullText;
-                        pre.scrollIntoView({ block: 'end', behavior: 'smooth' });
-                    }
-                } catch (_) {}
+        // Animate the text into the pre character by character
+        let i = 0;
+        const interval = setInterval(() => {
+            pre.textContent = fullText.slice(0, i);
+            pre.scrollIntoView({ block: 'end', behavior: 'smooth' });
+            i += 8;
+            if (i > fullText.length) {
+                clearInterval(interval);
+                pre.textContent = fullText;
+                // 3. Done — replace the <pre> with Garamond-rendered output
+                pre.remove();
+                renderFinalOutput(resultsContent, fullText);
             }
-        }
-
-        // 3. Stream done — replace the <pre> with Garamond-rendered output
-        pre.remove();
-        renderFinalOutput(resultsContent, fullText);
+        }, 16);
     } catch (error) {
         displayError(error.message);
     }
