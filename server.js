@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const https = require('https');
@@ -163,6 +164,42 @@ Where X and Y are the actual counts.`;
         res.write(`data: ${JSON.stringify({ error: error.message || 'Internal server error' })}\n\n`);
         res.end();
     }
+});
+
+// Local mirror of the Netlify function — used during local dev
+app.post('/.netlify/functions/claude', async (req, res) => {
+    const { prompt } = req.body;
+    const apiKey = process.env.API_KEY;
+
+    if (!prompt || !apiKey) {
+        return res.status(400).json({ error: { message: 'Missing prompt or API_KEY env var' } });
+    }
+
+    const postData = JSON.stringify({
+        model: 'claude-opus-4-6',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }],
+    });
+
+    const anthropicReq = https.request({
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Length': Buffer.byteLength(postData),
+        },
+    }, (anthropicRes) => {
+        let body = '';
+        anthropicRes.on('data', chunk => body += chunk);
+        anthropicRes.on('end', () => res.json(JSON.parse(body)));
+    });
+
+    anthropicReq.on('error', err => res.status(500).json({ error: { message: err.message } }));
+    anthropicReq.write(postData);
+    anthropicReq.end();
 });
 
 const PORT = 3000;

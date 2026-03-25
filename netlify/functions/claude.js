@@ -1,5 +1,5 @@
 export async function handler(event) {
-  const apiKey = process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.API_KEY;
 
   const { prompt } = JSON.parse(event.body);
 
@@ -11,7 +11,7 @@ export async function handler(event) {
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      model: "claude-3-sonnet-20240229",
+      model: "claude-opus-4-6",
       max_tokens: 300,
       messages: [
         { role: "user", content: prompt }

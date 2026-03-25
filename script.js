@@ -50,13 +50,20 @@ async function triggerSearch() {
     try {
         const response = await fetch('/.netlify/functions/claude', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: `Address: ${address}` }),
         });
 
         const data = await response.json();
-        const fullText = data.content?.[0]?.text || '';
+        console.log('Netlify function response:', data);
 
-        if (!fullText) { displayError('No response received.'); return; }
+        if (!response.ok || data.error) {
+            displayError(data.error?.message || data.error || `HTTP ${response.status}`);
+            return;
+        }
+
+        const fullText = data.content?.[0]?.text || '';
+        if (!fullText) { displayError('Empty response — check CLAUDE_API_KEY is set in Netlify environment variables.'); return; }
 
         // Animate the text into the pre character by character
         let i = 0;
